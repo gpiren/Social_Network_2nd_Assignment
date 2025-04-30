@@ -1,0 +1,105 @@
+---
+title: "Social Network - Assignment #2"
+author: "Ekin Kızıldaş - Gür Piren"
+format:
+  html:
+    toc: true
+    number-sections: true
+    toc-depth: 3
+date: "2025-05-14"
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Link prediction Project
+
+- Choose a network 0f 500 nodes and 5000+ edges
+- Import and visualize the network
+- Delete a fraction of real edges in the network and create a table
+of those links deleted (positive class) and of links non-present
+(negative class)
+- Generate a number of proximity/similarty metrics heuristics for
+each link in the positive and negative class
+- Train a binary classifier to predict the links, i.e., to predict the
+class (positive/negative) using those heuristics. Use cross-
+validation.
+- Evaluate the precision of the model. Which heuristic is the most
+important. Why do you think it is the most important?
+- Comment on potential ways to improve the link prediction
+
+**Social Network Analysis Class Roadmap**
+
+**Intro**
+
+**1. Choose a network**
+
+Use the network from homework 2 or select a new one (500+ nodes, 5000+ links, preferably social). Register choice on Aula Global.
+
+```{r}
+
+```
+
+
+**2. Import network data**
+
+Load data into R and create a graph using the igraph package. Use read.graph() or similar to import and graph_from_data_frame() to construct the graph.
+
+```{r}
+
+```
+
+
+**3. Link Prediction Project**
+
+**3.1.**
+
+Delete a fraction of real edges: Randomly remove 10-20% of edges using delete_edges() in igraph. Create a table of deleted (positive) and non-existing (negative) links with sample() for negative class.
+
+```{r}
+
+```
+
+
+**3.2.**
+
+Generate proximity/similarity metrics: Compute heuristics (e.g., common neighbors, Jaccard, Adamic-Adar) for all links using similarity() functions in igraph or custom calculations.
+
+```{r}
+
+```
+
+
+**3.3.**
+
+Train a binary classifier: Use caret or randomForest in R to train a classifier (e.g., logistic regression, random forest) on heuristics with cross-validation (trainControl for k-fold CV).
+
+```{r}
+
+```
+
+
+**3.4.**
+
+Evaluate model precision: Assess model using confusionMatrix() in caret to calculate precision, recall, and AUC. Identify key heuristic via feature importance (varImp()).
+
+```{r}
+
+```
+
+
+**3.5.**
+
+Comment on improvements: Suggest incorporating node attributes or advanced algorithms (e.g., graph neural networks) to enhance prediction accuracy.
+
+
+```{r}
+
+```
+
+
