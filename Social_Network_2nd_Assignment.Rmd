@@ -37,49 +37,252 @@ important. Why do you think it is the most important?
 
 **Intro**
 
-**1. Choose a network**
-
-Use the network from homework 2 or select a new one (500+ nodes, 5000+ links, preferably social). Register choice on Aula Global.
+## Libraries
 
 ```{r}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(igraph)
+library(stringr)
+library(dplyr)
+library(archive)
+
+library(ggraph) 
+library(tidygraph)
+library(ggrepel)
+library(extrafont)
+library(tibble)
+library(fmsb)
+library(GGally)
+library(tidyr)
+```
+
+## Tasks
+
+### Choose a network
+
+Marvel Universe social network, 2002. The network shows Marvel characters as being linked if they jointly appear in the same Marvel comic book.
+
+The dataset can be accessed through this [link](https://networks.skewed.de/net/marvel_universe)
+
+Number of nodes: 19.428
+Number of edges: 95.497
+
+
+### Import network data
+
+**id:** Unique identifier for each node in the network.
+
+**_pos:** Spatial coordinates (x, y) for node positioning in visualizations.
+
+**name:** Character name associated with each node ("ADAMS, GEORGE").
+
+
+```{r}
+marvel_nodes <- read.csv("data/nodes.csv", stringsAsFactors = FALSE,
+                         quote = "\"", fill = TRUE)
+
+marvel_links <- read.csv("data/edges.csv", stringsAsFactors = FALSE)
+```
+
+
+Data cleaning for the node coordinates
+
+```{r}
+# to get proper x and y coordinates
+
+marvel_nodes$x_cor <- as.numeric(str_extract(marvel_nodes$X_pos,
+                                             "-?\\d+\\.\\d+"))
+marvel_nodes$y_cor <- as.numeric(str_extract_all(marvel_nodes$X_pos,
+                                                 "-?\\d+\\.\\d+") %>% 
+                                   sapply(`[`, 2))
+
+# we don't need the X_pos anymore
+marvel_nodes$X_pos <- NULL
+```
+
+Renaming the columns and starting the index column from 1 
+
+```{r}
+marvel_nodes <- marvel_nodes |> 
+  rename(id = X..index,
+         character_name = name) |> 
+  mutate(id = id + 1) # for best indexing practice
+```
+
+
+```{r}
+marvel_nodes <- marvel_nodes |> 
+  mutate(character_name = str_replace_all(character_name, "/", " ")) |> 
+  mutate(character_name = str_trim(str_replace(character_name, "^(\\w+),\\s*([\\w\\s]+)$", "\\2 \\1"))) |> 
+  mutate(character_name = str_replace_all(character_name, "[^[:alnum:]\\s]", ""))
+```
+
+
+Applying the same indexing logic to 'marvel_links' where character co-appearances are stored.
+
+```{r}
+marvel_links <- marvel_links |> 
+  rename(source = X..source,
+         target = target)
+
+marvel_links <- marvel_links |> 
+  mutate(source = source + 1,
+         target = target + 1)
+```
+
+
+Visualization
+
+```{r}
+network_graph <- graph_from_data_frame(d = marvel_links, vertices = marvel_nodes, directed = FALSE)
+
+layout <- as.matrix(marvel_nodes[, c("x_cor", "y_cor")])
+plot(network_graph, 
+     vertex.label = NA, 
+     vertex.size = 2, 
+     vertex.color = "red", 
+     edge.color = "black", 
+     edge.width = 0.5, 
+     layout = layout)
+
+V(network_graph)$id <- marvel_nodes$id  # explicitly set id attribute
+
 
 ```
 
 
-**2. Import network data**
-
-Load data into R and create a graph using the igraph package. Use read.graph() or similar to import and graph_from_data_frame() to construct the graph.
-
-```{r}
-
-```
 
 
 **3. Link Prediction Project**
 
-**3.1.**
+### 3.1.
 
-Delete a fraction of real edges: Randomly remove 10-20% of edges using delete_edges() in igraph. Create a table of deleted (positive) and non-existing (negative) links with sample() for negative class.
+**Delete a fraction of real edges: Randomly remove 10-20% of edges using delete_edges() in igraph. Create a table of deleted (positive) and non-existing (negative) links with sample() for negative class.**
+
+
+The below code visualizes the process of preparing data for link prediction on the Marvel network in three steps: first, it plots the original network with all connections; then, it removes 15% of the edges, highlights them in gray, and plots this modified network; finally, it creates a reduced network by deleting those edges, generates a negative class of non-existing links, and plots the reduced network. The positive class consists of the removed edges, while the negative class includes an equal number of randomly sampled non-existing node pairs. The plots use node positions from x_cor and y_cor, with red nodes, black edges, and no labels for clarity.
+
+
+
+**Original Network:** The full Marvel network (network_graph) with all its nodes and edges as loaded from your data, showing all connections between characters.
+
+**Network with Removed Edges:** The same network_graph but with 15% of its edges marked in gray to indicate which ones will be removed, while still displaying all nodes and edges.
+
+**Reduced Network:** The modified network (graph_reduced) after actually removing those 15% of edges, showing only the remaining connections between nodes.
+
+
 
 ```{r}
+set.seed(123)
+par(mar=c(0,0,0,0), mfrow=c(1,3))
+layout <- as.matrix(marvel_nodes[, c("x_cor", "y_cor")])
+plot(network_graph, vertex.label=NA, vertex.size=2, vertex.color="red", edge.color="black", edge.width=0.5, layout=layout)
+
+# Delete 15% of edges
+edges <- as_data_frame(network_graph, what = "edges")
+remove_frac <- 0.15
+remove_edges <- sample(1:ecount(network_graph), size = round(remove_frac * ecount(network_graph)))
+positive_class <- edges[remove_edges, c("from", "to")]
+E(network_graph)$color <- "black"
+E(network_graph)$color[remove_edges] <- "gray"
+plot(network_graph, vertex.label=NA, vertex.size=2, vertex.color="red", edge.width=0.5, layout=layout)
+
+# Create negative class and plot reduced graph
+graph_reduced <- delete_edges(network_graph, remove_edges)
+sample_non_edges <- function(gr, n) {
+  non_edges <- data.frame(from = integer(), to = integer())
+  while (nrow(non_edges) < n) {
+    v1 <- sample(vcount(gr), 1)
+    v2 <- sample(vcount(gr), 1)
+    if (v1 != v2 && !are_adjacent(gr, v1, v2)) {
+      non_edges <- rbind(non_edges, data.frame(from = v1, to = v2))
+    }
+  }
+  non_edges
+}
+negative_class <- sample_non_edges(graph_reduced, nrow(positive_class))
+E(graph_reduced)$color <- "black"
+plot(graph_reduced, vertex.label=NA, vertex.size=2, vertex.color="red", edge.width=0.5, layout=layout)
+
+```
+
+### 3.2.
+
+Generate proximity/similarity metrics: Compute heuristics (common neighbors, Jaccard, Adamic-Adar) for all links using similarity() functions in igraph or custom calculations.
+
+**Common Neighbours** 
+
+Counts the number of shared neighbors between two nodes, indicating similarity through mutual connections.
+
+```{r}
+
+# Combine positive and negative classes
+metrics <- rbind(positive_class, negative_class)
+
+# Precompute indices for all from/to pairs to avoid repeated lookups
+from_indices <- sapply(metrics$from, function(id) which(V(network_graph)$id == id))
+to_indices <- sapply(metrics$to, function(id) which(V(network_graph)$id == id))
+
+# Common Neighbors (using Dice similarity to get intersection counts)
+dice_full <- similarity(network_graph, method = "dice", mode = "all")
+metrics$common_neighbors <- mapply(function(from_idx, to_idx) {
+  if (length(from_idx) == 0 || length(to_idx) == 0) return(0)
+  dice_full[from_idx, to_idx] * (degree(network_graph, from_idx) + degree(network_graph, to_idx)) / 2
+}, from_indices, to_indices)
+
 
 ```
 
 
-**3.2.**
+**Jaccard**
 
-Generate proximity/similarity metrics: Compute heuristics (e.g., common neighbors, Jaccard, Adamic-Adar) for all links using similarity() functions in igraph or custom calculations.
+Measures similarity as the ratio of shared neighbors to total unique neighbors of two nodes, normalizing for network size.
+
+
 
 ```{r}
+
+# Jaccard
+jaccard_full <- similarity(network_graph, method = "jaccard", mode = "all")
+metrics$jaccard <- mapply(function(from_idx, to_idx) {
+  if (length(from_idx) == 0 || length(to_idx) == 0) return(0)
+  jaccard_full[from_idx, to_idx]
+}, from_indices, to_indices)
+
+```
+
+
+**Adamic-Adar**
+
+Weights shared neighbors by the inverse log of their degrees, emphasizing connections through less-connected nodes.
+
+```{r}
+# Adamic-Adar
+adamic_adar_full <- similarity(network_graph, method = "invlogweighted", mode = "all")
+metrics$adamic_adar <- mapply(function(from_idx, to_idx) {
+  if (length(from_idx) == 0 || length(to_idx) == 0) return(0)
+  adamic_adar_full[from_idx, to_idx]
+}, from_indices, to_indices)
+```
+
+
+For the results:
+
+```{r}
+# Check results
+head(metrics)
 
 ```
 
 
 **3.3.**
 
-Train a binary classifier: Use caret or randomForest in R to train a classifier (e.g., logistic regression, random forest) on heuristics with cross-validation (trainControl for k-fold CV).
+Train a binary classifier: Use caret or randomForest in R to train a classifier (logistic regression, random forest) on heuristics with cross-validation (trainControl for k-fold CV).
 
 ```{r}
+
 
 ```
 
