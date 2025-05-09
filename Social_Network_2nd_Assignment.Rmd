@@ -155,6 +155,10 @@ V(network_graph)$id <- marvel_nodes$id  # explicitly set id attribute
 
 
 
+
+
+
+
 **3. Link Prediction Project**
 
 ### 3.1.
@@ -208,6 +212,7 @@ plot(graph_reduced, vertex.label=NA, vertex.size=2, vertex.color="red", edge.wid
 
 ```
 
+
 ### 3.2.
 
 Generate proximity/similarity metrics: Compute heuristics (common neighbors, Jaccard, Adamic-Adar) for all links using similarity() functions in igraph or custom calculations.
@@ -216,7 +221,42 @@ Generate proximity/similarity metrics: Compute heuristics (common neighbors, Jac
 
 Counts the number of shared neighbors between two nodes, indicating similarity through mutual connections.
 
+
+**EKLEMEM**
 ```{r}
+# 1) Make sure your positive/negative classes are integers
+positive_class <- positive_class %>%
+  mutate(from = as.integer(from),
+         to   = as.integer(to))
+
+negative_class <- negative_class %>%
+  mutate(from = as.integer(from),
+         to   = as.integer(to))
+         
+
+# 2) Precompute ALL three similarity matrices ON THE REDUCED GRAPH
+dice_mat    <- similarity(graph_reduced, method = "dice")
+jaccard_mat <- similarity(graph_reduced, method = "jaccard")
+aa_mat      <- similarity(graph_reduced, method = "invlogweighted")
+
+# 3) Combine into one data.frame with class labels
+metrics <- bind_rows(
+  mutate(positive_class, class = 1),
+  mutate(negative_class, class = 0)
+)    
+
+
+# 4) Compute Common Neighbours (undo Dice normalization)
+metrics$common_neighbors <- mapply(function(u, v) {
+  dice_mat[u, v] * (degree(graph_reduced, u) + degree(graph_reduced, v)) / 2
+}, metrics$from, metrics$to)
+
+         
+```
+
+
+```{r}
+
 
 # Combine positive and negative classes
 metrics <- rbind(positive_class, negative_class)
@@ -236,10 +276,11 @@ metrics$common_neighbors <- mapply(function(from_idx, to_idx) {
 ```
 
 
+
+
 **Jaccard**
 
 Measures similarity as the ratio of shared neighbors to total unique neighbors of two nodes, normalizing for network size.
-
 
 
 ```{r}
@@ -251,6 +292,14 @@ metrics$jaccard <- mapply(function(from_idx, to_idx) {
   jaccard_full[from_idx, to_idx]
 }, from_indices, to_indices)
 
+```
+
+**EKLEMEM**
+```{r}
+# 5) Compute Jaccard
+metrics$jaccard <- mapply(function(u, v) {
+  jaccard_mat[u, v]
+}, metrics$from, metrics$to)
 ```
 
 
@@ -267,12 +316,27 @@ metrics$adamic_adar <- mapply(function(from_idx, to_idx) {
 }, from_indices, to_indices)
 ```
 
+**EKLEMEM**
+
+```{r}
+# 6) Compute Adamic–Adar
+metrics$adamic_adar <- mapply(function(u, v) {
+  aa_mat[u, v]
+}, metrics$from, metrics$to)
+
+
+
+```
+
 
 For the results:
 
 ```{r}
 # Check results
 head(metrics)
+## Eklemem 
+nonzero <- which(metrics$common_neighbors > 0)
+head(metrics[nonzero, ], 10)
 
 ```
 
