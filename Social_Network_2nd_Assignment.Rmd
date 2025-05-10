@@ -1,17 +1,17 @@
 ---
-title: "Social Network - Assignment #2"
+  title: "Social Network - Assignment #2"
 author: "Ekin Kızıldaş - Gür Piren"
 format:
   html:
-    toc: true
-    number-sections: true
-    toc-depth: 3
+  toc: true
+number-sections: true
+toc-depth: 3
 date: "2025-05-14"
 editor_options: 
   markdown: 
-    wrap: sentence
+  wrap: sentence
 ---
-
+  
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
@@ -28,17 +28,17 @@ of those links deleted (positive class) and of links non-present
 each link in the positive and negative class
 - Train a binary classifier to predict the links, i.e., to predict the
 class (positive/negative) using those heuristics. Use cross-
-validation.
+  validation.
 - Evaluate the precision of the model. Which heuristic is the most
 important. Why do you think it is the most important?
-- Comment on potential ways to improve the link prediction
+  - Comment on potential ways to improve the link prediction
 
 **Social Network Analysis Class Roadmap**
-
-**Intro**
-
+  
+  **Intro**
+  
 ## Libraries
-
+  
 ```{r}
 #| message: false
 #| warning: false
@@ -133,7 +133,7 @@ marvel_links <- marvel_links |>
 ```
 
 
-Visualization
+**Visualization**
 
 ```{r}
 network_graph <- graph_from_data_frame(d = marvel_links, vertices = marvel_nodes, directed = FALSE)
@@ -149,23 +149,16 @@ plot(network_graph,
 
 V(network_graph)$id <- marvel_nodes$id  # explicitly set id attribute
 
-
 ```
 
 
-
-
-
-
-
-
 **3. Link Prediction Project**
-
+  
 ### 3.1.
-
+  
 **Delete a fraction of real edges: Randomly remove 10-20% of edges using delete_edges() in igraph. Create a table of deleted (positive) and non-existing (negative) links with sample() for negative class.**
-
-
+  
+  
 The below code visualizes the process of preparing data for link prediction on the Marvel network in three steps: first, it plots the original network with all connections; then, it removes 15% of the edges, highlights them in gray, and plots this modified network; finally, it creates a reduced network by deleting those edges, generates a negative class of non-existing links, and plots the reduced network. The positive class consists of the removed edges, while the negative class includes an equal number of randomly sampled non-existing node pairs. The plots use node positions from x_cor and y_cor, with red nodes, black edges, and no labels for clarity.
 
 
@@ -177,14 +170,13 @@ The below code visualizes the process of preparing data for link prediction on t
 **Reduced Network:** The modified network (graph_reduced) after actually removing those 15% of edges, showing only the remaining connections between nodes.
 
 
-
 ```{r}
 set.seed(123)
 par(mar=c(0,0,0,0), mfrow=c(1,3))
 layout <- as.matrix(marvel_nodes[, c("x_cor", "y_cor")])
 plot(network_graph, vertex.label=NA, vertex.size=2, vertex.color="red", edge.color="black", edge.width=0.5, layout=layout)
 
-# Delete 15% of edges
+# deleting 15% of edges
 edges <- as_data_frame(network_graph, what = "edges")
 remove_frac <- 0.15
 remove_edges <- sample(1:ecount(network_graph), size = round(remove_frac * ecount(network_graph)))
@@ -193,7 +185,8 @@ E(network_graph)$color <- "black"
 E(network_graph)$color[remove_edges] <- "gray"
 plot(network_graph, vertex.label=NA, vertex.size=2, vertex.color="red", edge.width=0.5, layout=layout)
 
-# Create negative class and plot reduced graph
+# creating a negative class and plot reduced graph
+
 graph_reduced <- delete_edges(network_graph, remove_edges)
 sample_non_edges <- function(gr, n) {
   non_edges <- data.frame(from = integer(), to = integer())
@@ -218,13 +211,21 @@ plot(graph_reduced, vertex.label=NA, vertex.size=2, vertex.color="red", edge.wid
 Generate proximity/similarity metrics: Compute heuristics (common neighbors, Jaccard, Adamic-Adar) for all links using similarity() functions in igraph or custom calculations.
 
 **Common Neighbours** 
+  
+The common neighbours method counts the number of shared neighbors between two nodes, indicating similarity through mutual connections.
 
-Counts the number of shared neighbors between two nodes, indicating similarity through mutual connections.
+In Step 2, we compute similarity matrices on the reduced graph to get similarity scores for all pairs of nodes at once, which is faster than calculating them one-by-one for each link in metrics. 
+
+We use the reduced graph because it reflects the network after removing some edges (positive class), mimicking a realworld scenario where we predict missing links based on the remaining structure.
 
 
-**EKLEMEM**
+The dice method in similarity calculates the Dice coefficient for all pairs of nodes, which is a similarity score based on shared neighbors. We use it because it’s a quick way to get a value related to common neighbors, which we can then adjust to find the actual count of shared neighbors.
+
+In the fourth step, we calculate common neighbors by "undoing" the Dice normalization, we take the Dice coefficient from dice_mat and multiply it by (degree(u) + degree(v)) / 2 to convert it back to the raw number of shared neighbors.
+
+
 ```{r}
-# 1) Make sure your positive/negative classes are integers
+# making sure our positive/negative classes are integers
 positive_class <- positive_class %>%
   mutate(from = as.integer(from),
          to   = as.integer(to))
@@ -232,71 +233,34 @@ positive_class <- positive_class %>%
 negative_class <- negative_class %>%
   mutate(from = as.integer(from),
          to   = as.integer(to))
-         
 
-# 2) Precompute ALL three similarity matrices ON THE REDUCED GRAPH
+
+# precomputing ALL three similarity matrices on the reduced graph
+
 dice_mat    <- similarity(graph_reduced, method = "dice")
 jaccard_mat <- similarity(graph_reduced, method = "jaccard")
 aa_mat      <- similarity(graph_reduced, method = "invlogweighted")
 
-# 3) Combine into one data.frame with class labels
+# combining all
 metrics <- bind_rows(
   mutate(positive_class, class = 1),
   mutate(negative_class, class = 0)
 )    
 
 
-# 4) Compute Common Neighbours (undo Dice normalization)
+# for the common neighbours 
 metrics$common_neighbors <- mapply(function(u, v) {
   dice_mat[u, v] * (degree(graph_reduced, u) + degree(graph_reduced, v)) / 2
 }, metrics$from, metrics$to)
 
-         
-```
-
-
-```{r}
-
-
-# Combine positive and negative classes
-metrics <- rbind(positive_class, negative_class)
-
-# Precompute indices for all from/to pairs to avoid repeated lookups
-from_indices <- sapply(metrics$from, function(id) which(V(network_graph)$id == id))
-to_indices <- sapply(metrics$to, function(id) which(V(network_graph)$id == id))
-
-# Common Neighbors (using Dice similarity to get intersection counts)
-dice_full <- similarity(network_graph, method = "dice", mode = "all")
-metrics$common_neighbors <- mapply(function(from_idx, to_idx) {
-  if (length(from_idx) == 0 || length(to_idx) == 0) return(0)
-  dice_full[from_idx, to_idx] * (degree(network_graph, from_idx) + degree(network_graph, to_idx)) / 2
-}, from_indices, to_indices)
-
 
 ```
-
-
-
 
 **Jaccard**
-
-Measures similarity as the ratio of shared neighbors to total unique neighbors of two nodes, normalizing for network size.
-
+  
+The Jaccard method measures similarity as the ratio of shared neighbors to total unique neighbors of two nodes, normalizing for network size. Let's calculate that too:
 
 ```{r}
-
-# Jaccard
-jaccard_full <- similarity(network_graph, method = "jaccard", mode = "all")
-metrics$jaccard <- mapply(function(from_idx, to_idx) {
-  if (length(from_idx) == 0 || length(to_idx) == 0) return(0)
-  jaccard_full[from_idx, to_idx]
-}, from_indices, to_indices)
-
-```
-
-**EKLEMEM**
-```{r}
-# 5) Compute Jaccard
 metrics$jaccard <- mapply(function(u, v) {
   jaccard_mat[u, v]
 }, metrics$from, metrics$to)
@@ -304,46 +268,62 @@ metrics$jaccard <- mapply(function(u, v) {
 
 
 **Adamic-Adar**
-
-Weights shared neighbors by the inverse log of their degrees, emphasizing connections through less-connected nodes.
-
-```{r}
-# Adamic-Adar
-adamic_adar_full <- similarity(network_graph, method = "invlogweighted", mode = "all")
-metrics$adamic_adar <- mapply(function(from_idx, to_idx) {
-  if (length(from_idx) == 0 || length(to_idx) == 0) return(0)
-  adamic_adar_full[from_idx, to_idx]
-}, from_indices, to_indices)
-```
-
-**EKLEMEM**
+  
+The Adamic-Adar method weights shared neighbors by the inverse log of their degrees, emphasizing connections through less-connected nodes. Onto calculating that:
 
 ```{r}
-# 6) Compute Adamic–Adar
 metrics$adamic_adar <- mapply(function(u, v) {
   aa_mat[u, v]
 }, metrics$from, metrics$to)
 
-
-
 ```
 
 
-For the results:
+**For the results**
+  
+  The results from metrics highlight pairs of nodes with at least one common neighbor, all in the negative class (class = 0), meaning they are non-existing links in our Marvel network. 
+
+The common_neighbors column (1 to 3) shows these pairs share a few neighbors despite not being directly connected. 
+The jaccard scores (0.04 to 0.67) measure the fraction of shared neighbors relative to all unique neighbors of the pair, where higher values (0.67) indicate the pair’s neighbors are very similar, and lower values (0.04) mean they share little overlap compared to their total connections. 
+
+The adamic_adar scores (0.14 to 0.52) weigh shared neighbors by the inverse log of their degrees, giving more importance to neighbors with fewer connections—higher scores (0.52) suggest the shared neighbors are less connected overall, making them more significant for linking the pair. 
+
+The variation in similarity metrics will help later the classifier identify which pairs are more likely to form connections based on their network proximity.
+
 
 ```{r}
-# Check results
-head(metrics)
-## Eklemem 
+
 nonzero <- which(metrics$common_neighbors > 0)
 head(metrics[nonzero, ], 10)
 
 ```
 
 
-**3.3.**
+**Preferential Attachment**
+  
+'Preferential Attachment' is a metric that predicts if two nodes might connect by multiplying the number of connections (degrees) each node has—a higher number means they’re more likely to connect because nodes with more connections tend to form new ones more easily.
 
-Train a binary classifier: Use caret or randomForest in R to train a classifier (logistic regression, random forest) on heuristics with cross-validation (trainControl for k-fold CV).
+
+The output shows pairs of nodes, all in the positive class (class = 1, meaning these are removed edges that originally existed in our Marvel network). The pref_attach values range from 25 to 4494: low values like 25 (row 5) indicate the nodes have few connections (5 * 5 = 25), suggesting lower likelihood of connecting based on popularity; high values like 4494 (row 6) indicate both nodes have many connections (66 * 68 = 4494), suggesting a higher likelihood of connecting due to their prominence in the network.
+
+
+```{r}
+# preferential attachment (product of degrees)
+metrics$pref_attach <- mapply(function(u, v) {
+  from_idx <- which(V(network_graph)$id == u)
+  to_idx <- which(V(network_graph)$id == v)
+  if (length(from_idx) == 0 || length(to_idx) == 0) return(0)
+  degree(network_graph, from_idx) * degree(network_graph, to_idx)
+}, metrics$from, metrics$to)
+
+# Check results for preferential attachment
+head(metrics %>% select(-common_neighbors, -jaccard, -adamic_adar))
+```
+
+
+**3.3.**
+  
+  Train a binary classifier: Use caret or randomForest in R to train a classifier (logistic regression, random forest) on heuristics with cross-validation (trainControl for k-fold CV).
 
 ```{r}
 
@@ -352,8 +332,8 @@ Train a binary classifier: Use caret or randomForest in R to train a classifier 
 
 
 **3.4.**
-
-Evaluate model precision: Assess model using confusionMatrix() in caret to calculate precision, recall, and AUC. Identify key heuristic via feature importance (varImp()).
+  
+  Evaluate model precision: Assess model using confusionMatrix() in caret to calculate precision, recall, and AUC. Identify key heuristic via feature importance (varImp()).
 
 ```{r}
 
@@ -361,8 +341,8 @@ Evaluate model precision: Assess model using confusionMatrix() in caret to calcu
 
 
 **3.5.**
-
-Comment on improvements: Suggest incorporating node attributes or advanced algorithms (e.g., graph neural networks) to enhance prediction accuracy.
+  
+  Comment on improvements: Suggest incorporating node attributes or advanced algorithms (e.g., graph neural networks) to enhance prediction accuracy.
 
 
 ```{r}
