@@ -56,6 +56,7 @@ library(tibble)
 library(fmsb)
 library(GGally)
 library(tidyr)
+library(caret)
 ```
 
 ## Tasks
@@ -323,19 +324,138 @@ head(metrics %>% select(-common_neighbors, -jaccard, -adamic_adar))
 
 **3.3.**
   
-  Train a binary classifier: Use caret or randomForest in R to train a classifier (logistic regression, random forest) on heuristics with cross-validation (trainControl for k-fold CV).
+Next, three classifiers which are logistic regression, a decision tree (CART), and random forest  was trained by using our four heuristics (common neighbors, Jaccard, Adamic–Adar and preferential attachment) as input features. All models were evaluated via 5-fold cross-validation in the caret package, optimizing for AUC (ROC) and saving out-of-fold predictions for detailed comparison.
+
+**Logistic Regression** achieved an average AUC of 0.923, with recall near 96% (recovering almost all true links) but a lower specificity of 67% (more false positives).
+**Decision Tree (CART)** reached an AUC of 0.909, with recall around 89% and specificity of 81%, offering a simple, interpretable set of rules that balances link detection and false-positive control.
+
+**Random Forest** scored an AUC of 0.892, with recall around 90% and specificity of 80%, leveraging ensemble learning for robustness but slightly trailing the single tree.
+
+This comparison shows that logistic regression excels at ranking and capturing nearly every true connection, the decision tree delivers a clear decision logic with solid balance between sensitivity and specificity, and random forest provides a robust middle ground by modeling feature interactions.
 
 ```{r}
+library(caret)
+set.seed(42)
 
+# 1) Features & target
+X <- metrics %>% dplyr::select(common_neighbors, jaccard, adamic_adar, pref_attach)
+y <- factor(metrics$class, levels = c(0,1), labels = c("no","yes"))
+
+# 2) 5-fold CV setup: save probabilities and use ROC for model selection
+ctrl <- trainControl(
+  method           = "cv",
+  number           = 5,
+  classProbs       = TRUE,
+  summaryFunction  = twoClassSummary,
+  savePredictions  = "final"
+)
+
+# 3) Logistic Regression model
+model_glm_lp <- train(
+  x         = X,
+  y         = y,
+  method    = "glm",
+  family    = binomial(),
+  metric    = "ROC",
+  trControl = ctrl
+)
+# 4) Decision Tree (rpart)
+model_dt <- train(
+  x         = X,
+  y         = y,
+  method    = "rpart",
+  metric    = "ROC",
+  trControl = ctrl,
+  tuneLength = 10
+)
+
+# 5) Random Forest
+model_rf <- train(
+  x          = X,
+  y          = y,
+  method     = "rf",
+  metric     = "ROC",
+  trControl  = ctrl,
+  tuneLength = 5,
+  ntree      = 500
+)
+
+# 6) Summarize results
+resamps <- resamples(list(
+  GLM  = model_glm_lp,
+  Tree = model_dt,
+  RF   = model_rf
+))
+print(summary(resamps))
+bwplot(resamps, metric = "ROC", main = "ROC Comparison Across Models")
 
 ```
 
 
 **3.4.**
   
-  Evaluate model precision: Assess model using confusionMatrix() in caret to calculate precision, recall, and AUC. Identify key heuristic via feature importance (varImp()).
+ To evaluate model performance, accuracy, precision, recall, and AUC were calculated using out-of-fold predictions from cross-validation. Logistic regression achieved the highest AUC (0.923) and precision (0.947), indicating strong ranking performance and few false positives. However, its recall (0.675) was lower, suggesting it missed some true links. The decision tree offered a more balanced performance with solid recall (0.807) and a good AUC (0.911). Random forest had the highest accuracy (0.85) and similar recall (0.805), but slightly lower AUC (0.887).
 
-```{r}
+To understand which heuristics contributed most to predictions, varImp() function was used the on all three models. In every case—logistic regression, decision tree, and random forest—the preferential attachment score was by far the most influential feature. For example, in the logistic model, pref_attach had an importance score over 50, while the next highest features like common_neighbors, adamic_adar, and jaccard scored below 0.01. This pattern repeated in tree-based models, highlighting that nodes with more connections were consistently favored by all algorithms. This aligns with theoretical expectations: in social networks, highly connected nodes tend to attract even more links, making preferential attachment a dominant predictor of future connections.
+
+
+```{r model-evaluation-and-importance, message=FALSE, warning=FALSE}
+library(caret)
+library(pROC)
+library(dplyr)
+
+#LOGISTIC REGRESSION
+pred_glm <- model_glm_lp$pred
+cm_glm   <- confusionMatrix(pred_glm$pred, pred_glm$obs, positive = "yes")
+auc_glm  <- roc(pred_glm$obs, pred_glm$yes)$auc
+
+# DECISION TREE
+pred_dt <- model_dt$pred
+cm_dt   <- confusionMatrix(pred_dt$pred, pred_dt$obs, positive = "yes")
+auc_dt  <- roc(pred_dt$obs, pred_dt$yes)$auc
+
+# RANDOM FOREST
+pred_rf <- model_rf$pred %>% filter(mtry == model_rf$bestTune$mtry)
+cm_rf   <- confusionMatrix(pred_rf$pred, pred_rf$obs, positive = "yes")
+auc_rf  <- roc(pred_rf$obs, pred_rf$yes)$auc
+
+# METRIC TABLE
+metrics_new <- tibble(
+  Model     = c("Logistic Regression", "Decision Tree", "Random Forest"),
+  AUC       = c(auc_glm, auc_dt, auc_rf),
+  Accuracy  = c(cm_glm$overall["Accuracy"],
+                cm_dt$overall["Accuracy"],
+                cm_rf$overall["Accuracy"]),
+  Precision = c(cm_glm$byClass["Precision"],
+                cm_dt$byClass["Precision"],
+                cm_rf$byClass["Precision"]),
+  Recall    = c(cm_glm$byClass["Recall"],
+                cm_dt$byClass["Recall"],
+                cm_rf$byClass["Recall"])
+)
+print(metrics_new)
+
+#FEATURE IMPORTANCE
+
+# Decision Tree
+varImp_dt <- varImp(model_dt, scale = FALSE)
+print(varImp_dt)
+plot(varImp_dt, main = "Feature Importance - Decision Tree")
+
+# Random Forest
+varImp_rf <- varImp(model_rf, scale = FALSE)
+print(varImp_rf)
+plot(varImp_rf, main = "Feature Importance - Random Forest")
+
+
+## LG
+
+varImp_lg <- varImp(model_glm_lp, scale = FALSE)
+print(varImp_lg)
+plot(varImp_lg, main = "Feature Importance - LG")
+
+
+
 
 ```
 
@@ -345,8 +465,65 @@ head(metrics %>% select(-common_neighbors, -jaccard, -adamic_adar))
   Comment on improvements: Suggest incorporating node attributes or advanced algorithms (e.g., graph neural networks) to enhance prediction accuracy.
 
 
+
+
 ```{r}
+library(nnet)
+
+# Örnek veri: 4 özellik + ikili sınıf
+X <- metrics %>% dplyr::select(common_neighbors, jaccard, adamic_adar, pref_attach)
+y <- factor(metrics$class)
+
+# Veriyi ayır (70/30)
+set.seed(123)
+train_index <- sample(1:nrow(X), 0.7 * nrow(X))
+X_train <- X[train_index, ]
+y_train <- y[train_index]
+X_test  <- X[-train_index, ]
+y_test  <- y[-train_index]
+
+# Neural network modeli (tek gizli katman, 5 nöron)
+nn_model <- nnet(X_train, class.ind(y_train), size = 5, maxit = 500, decay = 0.01, softmax = TRUE)
+
+# Tahmin
+pred_probs <- predict(nn_model, X_test, type = "raw")
+pred_labels <- factor(ifelse(pred_probs[, 2] > 0.5, "1", "0"))
+
+# Confusion matrix
+confusionMatrix(pred_labels, y_test, positive = "1")
 
 ```
 
+
+```{r}
+library(xgboost)
+X <- as.matrix(metrics[, 1:4])
+y <- as.numeric(metrics$class)
+
+# 70/30 split
+train_idx <- sample(1:nrow(X), 0.7 * nrow(X))
+X_train <- X[train_idx, ]; y_train <- y[train_idx]
+X_test <- X[-train_idx, ]; y_test <- y[-train_idx]
+
+model_xgb <- xgboost(data = X_train, label = y_train, nrounds = 100, objective = "binary:logistic")
+pred_probs <- predict(model_xgb, X_test)
+pred_labels <- ifelse(pred_probs > 0.5, 1, 0)
+
+confusionMatrix(as.factor(pred_labels), as.factor(y_test), positive = "1")
+
+```
+
+```{r}
+X_test_df <- as.data.frame(X_test)  # Matriksten emin olalım
+X_test_df$class <- as.factor(y_test)
+
+library(ggplot2)
+
+ggplot(X_test_df, aes(x = common_neighbors, fill = class)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Distribution of Common Neighbors by Class")
+
+
+
+```
 
