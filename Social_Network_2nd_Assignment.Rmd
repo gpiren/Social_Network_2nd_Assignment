@@ -459,71 +459,13 @@ plot(varImp_lg, main = "Feature Importance - LG")
 
 ```
 
+### 3.5  Potential Improvements
 
-**3.5.**
-  
-  Comment on improvements: Suggest incorporating node attributes or advanced algorithms (e.g., graph neural networks) to enhance prediction accuracy.
+While the current models using structural heuristics performed reasonably well, there is still room for improvement. One direction would be to incorporate node-level attributes such as degree centrality, community membership, or even character metadata (e.g., gender, popularity, or comic genre) to enrich the feature set and provide more contextual signals for link prediction. Additionally, exploring more advanced models like gradient boosting or support vector machines could help capture non-linear relationships between features.
 
-
-
-
-```{r}
-library(nnet)
-
-# Örnek veri: 4 özellik + ikili sınıf
-X <- metrics %>% dplyr::select(common_neighbors, jaccard, adamic_adar, pref_attach)
-y <- factor(metrics$class)
-
-# Veriyi ayır (70/30)
-set.seed(123)
-train_index <- sample(1:nrow(X), 0.7 * nrow(X))
-X_train <- X[train_index, ]
-y_train <- y[train_index]
-X_test  <- X[-train_index, ]
-y_test  <- y[-train_index]
-
-# Neural network modeli (tek gizli katman, 5 nöron)
-nn_model <- nnet(X_train, class.ind(y_train), size = 5, maxit = 500, decay = 0.01, softmax = TRUE)
-
-# Tahmin
-pred_probs <- predict(nn_model, X_test, type = "raw")
-pred_labels <- factor(ifelse(pred_probs[, 2] > 0.5, "1", "0"))
-
-# Confusion matrix
-confusionMatrix(pred_labels, y_test, positive = "1")
-
-```
-
-
-```{r}
-library(xgboost)
-X <- as.matrix(metrics[, 1:4])
-y <- as.numeric(metrics$class)
-
-# 70/30 split
-train_idx <- sample(1:nrow(X), 0.7 * nrow(X))
-X_train <- X[train_idx, ]; y_train <- y[train_idx]
-X_test <- X[-train_idx, ]; y_test <- y[-train_idx]
-
-model_xgb <- xgboost(data = X_train, label = y_train, nrounds = 100, objective = "binary:logistic")
-pred_probs <- predict(model_xgb, X_test)
-pred_labels <- ifelse(pred_probs > 0.5, 1, 0)
-
-confusionMatrix(as.factor(pred_labels), as.factor(y_test), positive = "1")
-
-```
-
-```{r}
-X_test_df <- as.data.frame(X_test)  # Matriksten emin olalım
-X_test_df$class <- as.factor(y_test)
-
-library(ggplot2)
-
-ggplot(X_test_df, aes(x = common_neighbors, fill = class)) +
-  geom_density(alpha = 0.5) +
-  labs(title = "Distribution of Common Neighbors by Class")
+For deeper improvements, graph embedding techniques like node2vec or DeepWalk can be used to generate dense vector representations of nodes that capture both local and global network structure. Finally, using Graph Neural Networks (GNNs)—which learn directly from the graph structure—could allow the model to understand more complex patterns of connectivity that heuristic-based features might miss. These approaches could potentially boost both precision and recall in predicting future or hidden links.
 
 
 
-```
+
 
