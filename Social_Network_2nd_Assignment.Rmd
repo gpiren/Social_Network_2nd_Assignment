@@ -1,15 +1,14 @@
 ---
-  title: "Social Network - Assignment #2"
+title: "Social Network - Assignment #2"
 author: "Ekin Kızıldaş - Gür Piren"
-format:
-  html:
-  toc: true
+format: html
+toc: true
 number-sections: true
 toc-depth: 3
 date: "2025-05-14"
-editor_options: 
-  markdown: 
-  wrap: sentence
+editor_options:
+  markdown:
+    wrap: sentence
 ---
   
 ```{r setup, include=FALSE}
@@ -137,18 +136,22 @@ marvel_links <- marvel_links |>
 ```
 
 ```{r}
-# Fixing the Marvel dataset: it's actually a bipartite network
-# Characters are connected to comic books, not directly to each other
+library(igraph)
+library(dplyr)
 
-# Create the bipartite graph
-bipartite_graph <- graph_from_data_frame(marvel_links, vertices = marvel_nodes, directed = FALSE)
+# Only keep proper bipartite edges: one from each type
+marvel_links_bip <- marvel_links %>%
+  filter((source <= 6486 & target > 6486) | (source > 6486 & target <= 6486))
 
-# Tag first 6486 nodes as characters (FALSE), rest as comic books (TRUE)
+# Recreate graph with only valid bipartite edges
+bipartite_graph <- graph_from_data_frame(marvel_links_bip, vertices = marvel_nodes, directed = FALSE)
+
+# Tag nodes: FALSE = character, TRUE = comic book
 V(bipartite_graph)$type <- seq_along(V(bipartite_graph)) > 6486
 
-# Create character-character projection
+# Perform projection: character-character network
 projections <- bipartite_projection(bipartite_graph)
-network_graph <- projections$proj1  # this is your new correct character-only network
+network_graph <- projections$proj1  # This is your final graph
 
 
 ```
@@ -157,7 +160,7 @@ network_graph <- projections$proj1  # this is your new correct character-only ne
 
 **Visualization**
 
-```{r}
+```{r eval = FALSE}
 network_graph <- graph_from_data_frame(d = marvel_links, vertices = marvel_nodes, directed = FALSE)
 
 layout <- as.matrix(marvel_nodes[, c("x_cor", "y_cor")])
@@ -328,11 +331,11 @@ The adamic_adar scores (0.14 to 0.52) weigh shared neighbors by the inverse log 
 
 The variation in similarity metrics will help later the classifier identify which pairs are more likely to form connections based on their network proximity.
 ```{r}
-metrics
+head(metrics,10)
 ```
 
 
-```{r}
+```{r eval = FALSE}
 
 nonzero <- which(metrics$common_neighbors > 0)
 head(metrics[nonzero, ], 10)
