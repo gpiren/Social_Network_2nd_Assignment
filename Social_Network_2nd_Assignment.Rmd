@@ -14,28 +14,8 @@ editor_options:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
-
-
-Link prediction Project
-
-- Choose a network 0f 500 nodes and 5000+ edges
-- Import and visualize the network
-- Delete a fraction of real edges in the network and create a table
-of those links deleted (positive class) and of links non-present
-(negative class)
-- Generate a number of proximity/similarty metrics heuristics for
-each link in the positive and negative class
-- Train a binary classifier to predict the links, i.e., to predict the
-class (positive/negative) using those heuristics. Use cross-
-  validation.
-- Evaluate the precision of the model. Which heuristic is the most
-important. Why do you think it is the most important?
-  - Comment on potential ways to improve the link prediction
-
-**Social Network Analysis Class Roadmap**
   
-  **Intro**
-  
+
 ## Libraries
   
 ```{r}
@@ -72,11 +52,10 @@ Number of edges: 95.497
 
 ### Import network data
 
-**id:** Unique identifier for each node in the network.
+One important thing to note about our network is that it is a bipartite network. We have discovered this after consulting the professor, and found out that the first 6.486 rows represent the character nodes while the rest shows the comic books in which characters appear.
 
-**_pos:** Spatial coordinates (x, y) for node positioning in visualizations.
+We will address the issue using bipartite projection, which will help us separate the characters nodes from the comic book nodes, eventually providing us with the robust results when assessing different types of similarity metrics. To not spoil all the fun just yet, let's move onto data cleaning part.
 
-**name:** Character name associated with each node ("ADAMS, GEORGE").
 
 
 ```{r}
@@ -85,9 +64,6 @@ marvel_nodes <- read.csv("data/nodes.csv", stringsAsFactors = FALSE,
 
 marvel_links <- read.csv("data/edges.csv", stringsAsFactors = FALSE)
 ```
-
-
-
 
 
 Data cleaning for the node coordinates
@@ -105,7 +81,9 @@ marvel_nodes$y_cor <- as.numeric(str_extract_all(marvel_nodes$X_pos,
 marvel_nodes$X_pos <- NULL
 ```
 
-Renaming the columns and starting the index column from 1 
+
+Renaming the columns and starting the index column from 1.
+
 
 ```{r}
 marvel_nodes <- marvel_nodes |> 
@@ -114,6 +92,7 @@ marvel_nodes <- marvel_nodes |>
   mutate(id = id + 1) # for best indexing practice
 ```
 
+Cleaning the names in the character name column
 
 ```{r}
 marvel_nodes <- marvel_nodes |> 
@@ -135,52 +114,42 @@ marvel_links <- marvel_links |>
          target = target + 1)
 ```
 
-```{r}
-library(igraph)
-library(dplyr)
 
-# Only keep proper bipartite edges: one from each type
+This code builds a bipartite graph from marvel_links, keeping only edges between characters and comic books. (The first 6.486 rows belong to characters, whereas the rest is comic books)
+
+We then create the bipartite graph and tag nodes as character (FALSE) or comic book (TRUE).
+
+Lastly, we project the bipartite graph into a character–character network, where two characters are connected if they appear in the same comic book.
+
+```{r}
+
+# only keep proper bipartite edges: one from each type
+
 marvel_links_bip <- marvel_links %>%
   filter((source <= 6486 & target > 6486) | (source > 6486 & target <= 6486))
 
-# Recreate graph with only valid bipartite edges
+# recreating the graph with only valid bipartite edges
 bipartite_graph <- graph_from_data_frame(marvel_links_bip, vertices = marvel_nodes, directed = FALSE)
 
-# Tag nodes: FALSE = character, TRUE = comic book
+# tagging the nodes
 V(bipartite_graph)$type <- seq_along(V(bipartite_graph)) > 6486
 
-# Perform projection: character-character network
+# character-character network
 projections <- bipartite_projection(bipartite_graph)
-network_graph <- projections$proj1  # This is your final graph
-
+network_graph <- projections$proj1  
 
 ```
-
 
 
 **Visualization**
 
-```{r eval = FALSE}
-network_graph <- graph_from_data_frame(d = marvel_links, vertices = marvel_nodes, directed = FALSE)
+Visualising the network after projection.
 
-layout <- as.matrix(marvel_nodes[, c("x_cor", "y_cor")])
-plot(network_graph, 
-     vertex.label = NA, 
-     vertex.size = 2, 
-     vertex.color = "red", 
-     edge.color = "black", 
-     edge.width = 0.5, 
-     layout = layout)
+The network shows a densely connected core surrounded by many weakly connected nodes, suggesting a small group of central characters who frequently co-appear, while many others have limited connections. The scattered periphery and disconnected components imply minor characters, and the layout highlights the strong centralization.
 
-V(network_graph)$id <- marvel_nodes$id  # explicitly set id attribute
-
-```
 
 ```{r}
-# After projection: character-character network
-# network_graph is already created via bipartite_projection
-
-layout <- layout_with_fr(network_graph)  # since x_cor/y_cor no longer valid here
+layout <- layout_with_fr(network_graph) 
 
 plot(network_graph, 
      vertex.label = NA, 
@@ -202,47 +171,74 @@ plot(network_graph,
   
 The below code visualizes the process of preparing data for link prediction on the Marvel network in three steps: first, it plots the original network with all connections; then, it removes 15% of the edges, highlights them in gray, and plots this modified network; finally, it creates a reduced network by deleting those edges, generates a negative class of non-existing links, and plots the reduced network. The positive class consists of the removed edges, while the negative class includes an equal number of randomly sampled non-existing node pairs. The plots use node positions from x_cor and y_cor, with red nodes, black edges, and no labels for clarity.
 
+**Original Network:** The full Marvel character-character projection network created from the bipartite character-comic network, showing all connections between characters based on shared comic appearances. 
 
+**Network with Removed Edges:** The same network but with 10–20% of its edges highlighted in gray to indicate which links have been selected for removal. This helps visualize which character relationships are targeted for deletion while still preserving the original structure. (However, due to high volyme of nodes, the gray ones are not very visible)
 
-**Original Network:** The full Marvel network (network_graph) with all its nodes and edges as loaded from your data, showing all connections between characters.
-
-**Network with Removed Edges:** The same network_graph but with 15% of its edges marked in gray to indicate which ones will be removed, while still displaying all nodes and edges.
-
-**Reduced Network:** The modified network (graph_reduced) after actually removing those 15% of edges, showing only the remaining connections between nodes.
+**Reduced Network:** The resulting network after actually deleting the selected edges. It displays only the remaining connections among characters, making it sparser and visually showing the impact of the edge removal.
 
 
 ```{r}
 set.seed(123)
-par(mar=c(0,0,0,0), mfrow=c(1,3))
-layout <- as.matrix(marvel_nodes[, c("x_cor", "y_cor")])
-plot(network_graph, vertex.label=NA, vertex.size=2, vertex.color="red", edge.color="black", edge.width=0.5, layout=layout)
 
-# deleting 15% of edges
-edges <- as_data_frame(network_graph, what = "edges")
-remove_frac <- 0.15
+# to ensure the 1x3 layout of three networks - original, network with removed edges, and reduced network
+par(mar = c(0, 0, 0, 0), mfrow = c(1, 3))
+
+# --- Plot 1: Original network ---
+plot(network_graph,
+     vertex.label = NA,
+     vertex.size = 2,
+     vertex.color = "red",
+     edge.color = "black",
+     edge.width = 0.5,
+     layout = layout)
+
+# randomly removing 10-20% of edges
+
+remove_frac <- runif(1, 0.10, 0.20)
 remove_edges <- sample(1:ecount(network_graph), size = round(remove_frac * ecount(network_graph)))
+edges <- as_data_frame(network_graph, what = "edges")
 positive_class <- edges[remove_edges, c("from", "to")]
+
+# coloring the removed edges gray for visualization
+
 E(network_graph)$color <- "black"
 E(network_graph)$color[remove_edges] <- "gray"
-plot(network_graph, vertex.label=NA, vertex.size=2, vertex.color="red", edge.width=0.5, layout=layout)
 
-# creating a negative class and plot reduced graph
+# second plot, the network with removed edges
+plot(network_graph,
+     vertex.label = NA,
+     vertex.size = 2,
+     vertex.color = "red",
+     edge.width = 0.5,
+     layout = layout)
 
+# removing edges to form the reduced graph 
 graph_reduced <- delete_edges(network_graph, remove_edges)
+
+# saampling negative class (non-edges)
 sample_non_edges <- function(gr, n) {
   non_edges <- data.frame(from = integer(), to = integer())
   while (nrow(non_edges) < n) {
     v1 <- sample(vcount(gr), 1)
     v2 <- sample(vcount(gr), 1)
     if (v1 != v2 && !are_adjacent(gr, v1, v2)) {
-      non_edges <- rbind(non_edges, data.frame(from = v1, to = v2))
+      non_edges <- rbind(non_edges, data.frame(from = V(gr)$name[v1], to = V(gr)$name[v2]))
     }
   }
   non_edges
 }
 negative_class <- sample_non_edges(graph_reduced, nrow(positive_class))
+
+# third plot, the reduced graph (after deletion)
 E(graph_reduced)$color <- "black"
-plot(graph_reduced, vertex.label=NA, vertex.size=2, vertex.color="red", edge.width=0.5, layout=layout)
+plot(graph_reduced,
+     vertex.label = NA,
+     vertex.size = 2,
+     vertex.color = "red",
+     edge.width = 0.5,
+     layout = layout)
+
 
 ```
 
@@ -255,14 +251,15 @@ Generate proximity/similarity metrics: Compute heuristics (common neighbors, Jac
   
 The common neighbours method counts the number of shared neighbors between two nodes, indicating similarity through mutual connections.
 
-In Step 2, we compute similarity matrices on the reduced graph to get similarity scores for all pairs of nodes at once, which is faster than calculating them one-by-one for each link in metrics. 
+In our approach, we used 'Dice' similarity to calculate common neighbors, adjusting it by incorporating the **degree** of the nodes. This method, we believe, will help us weight common neighbors based on node connectivity, offering a more balanced measure that accounts for node importance. We wanted to provide a more balanced view by accounting for the relative importance of nodes by doing this.
 
-We use the reduced graph because it reflects the network after removing some edges (positive class), mimicking a realworld scenario where we predict missing links based on the remaining structure.
+After ensuring that the node identifiers in both the positive and negative link sets are stored as integers, we calculate three node similarity matrices (Dice, Jaccard, and Adamic-Adar) for all node pairs in the reduced graph. 
 
+We calculate common neighbors after applying Dice similarity to incorporate both the shared neighbors and the degree of the nodes. This allows us to weight common neighbors more effectively, ensuring that more connected nodes have a proportional influence, which enhances the accuracy of our link prediction. Let's hope it was a good choice!
 
-The dice method in similarity calculates the Dice coefficient for all pairs of nodes, which is a similarity score based on shared neighbors. We use it because it’s a quick way to get a value related to common neighbors, which we can then adjust to find the actual count of shared neighbors.
+These similarities are used to assess how likely two unconnected nodes might form a link. After that, the positive and negative examples are combined into a single dataset with a class label indicating whether a pair is a real (1) or fake (0) link. 
 
-In the fourth step, we calculate common neighbors by "undoing" the Dice normalization, we take the Dice coefficient from dice_mat and multiply it by (degree(u) + degree(v)) / 2 to convert it back to the raw number of shared neighbors.
+Finally, a custom similarity score based on common neighbors is computed using the Dice similarity and the average degree of the two nodes. Then we will move onto other similarity metrics such as Jaccard and Adamic-Adar in the next chunks.
 
 
 ```{r}
@@ -322,37 +319,33 @@ metrics$adamic_adar <- mapply(function(u, v) {
 
 **For the results**
   
-  The results from metrics highlight pairs of nodes with at least one common neighbor, all in the negative class (class = 0), meaning they are non-existing links in our Marvel network. 
+The results from the table indicate pairs of nodes in the Marvel network that share common neighbors but are not directly connected (class = 1).
 
-The common_neighbors column (1 to 3) shows these pairs share a few neighbors despite not being directly connected. 
-The jaccard scores (0.04 to 0.67) measure the fraction of shared neighbors relative to all unique neighbors of the pair, where higher values (0.67) indicate the pair’s neighbors are very similar, and lower values (0.04) mean they share little overlap compared to their total connections. 
+The common_neighbors column (5 to 70) shows the number of shared neighbors between pairs. These pairs, despite not being connected, have some level of overlap in their network of connections.
 
-The adamic_adar scores (0.14 to 0.52) weigh shared neighbors by the inverse log of their degrees, giving more importance to neighbors with fewer connections—higher scores (0.52) suggest the shared neighbors are less connected overall, making them more significant for linking the pair. 
+The jaccard scores (0.008 to 0.17) represent the ratio of shared neighbors relative to the total number of unique neighbors between the pair. Lower values (like 0.008) suggest minimal overlap in their neighbor relationships, while higher values (such as 0.17) show a more significant overlap of neighbors.
 
-The variation in similarity metrics will help later the classifier identify which pairs are more likely to form connections based on their network proximity.
+The adamic_adar scores (0.96 to 11.98) indicate the importance of shared neighbors by weighing them based on the inverse logarithm of their degree. Higher scores (11.98) imply that the shared neighbors are less connected overall and are more valuable in predicting a possible connection between the pair.
+
+This variability in the similarity metrics across pairs will be useful for a classifier to determine which pairs are more likely to form direct links in the network, based on their proximity and shared neighbors.
+
 ```{r}
 head(metrics,10)
 ```
-
-
-```{r eval = FALSE}
-
-nonzero <- which(metrics$common_neighbors > 0)
-head(metrics[nonzero, ], 10)
-
-```
-
 
 **Preferential Attachment**
   
 'Preferential Attachment' is a metric that predicts if two nodes might connect by multiplying the number of connections (degrees) each node has—a higher number means they’re more likely to connect because nodes with more connections tend to form new ones more easily.
 
 
-The output shows pairs of nodes, all in the positive class (class = 1, meaning these are removed edges that originally existed in our Marvel network). The pref_attach values range from 25 to 4494: low values like 25 (row 5) indicate the nodes have few connections (5 * 5 = 25), suggesting lower likelihood of connecting based on popularity; high values like 4494 (row 6) indicate both nodes have many connections (66 * 68 = 4494), suggesting a higher likelihood of connecting due to their prominence in the network.
+The table shows pairs of nodes in the Marvel network with no direct connection (class = 1), evaluated using the preferential attachment metric.
 
+The pref_attach values (5,940 to 26,625) indicate the likelihood of forming a connection based on node degrees. Higher values (such as 26,625) suggest a greater potential for a link due to higher degrees, while lower values (5,940) indicate a weaker potential.
+
+This metric helps the classifier assess which pairs might form connections based on node connectivity.
 
 ```{r}
-V(network_graph)$name <- as.character(V(network_graph))  # ID olarak ata
+V(network_graph)$name <- as.character(V(network_graph)) 
 
 
 metrics$pref_attach <- mapply(function(u, v) {
@@ -372,24 +365,30 @@ head(metrics %>% select(-common_neighbors, -jaccard, -adamic_adar))
 
 **3.3.**
   
-Next, three classifiers which are logistic regression, a decision tree (CART), and random forest  was trained by using our four heuristics (common neighbors, Jaccard, Adamic–Adar and preferential attachment) as input features. All models were evaluated via 5-fold cross-validation in the caret package, optimizing for AUC (ROC) and saving out-of-fold predictions for detailed comparison.
+Next, three classifiers which are logistic regression, a decision tree (CART), and random forest  was trained by using our four heuristics (common neighbors, Jaccard, Adamic–Adar and preferential attachment) as input features. 
 
-**Logistic Regression** achieved an average AUC of 0.923, with recall near 96% (recovering almost all true links) but a lower specificity of 67% (more false positives).
-**Decision Tree (CART)** reached an AUC of 0.909, with recall around 89% and specificity of 81%, offering a simple, interpretable set of rules that balances link detection and false-positive control.
+All models were evaluated via 5-fold cross-validation in the caret package, optimizing for AUC (ROC) and saving out of fold predictions for comparison.
 
-**Random Forest** scored an AUC of 0.892, with recall around 90% and specificity of 80%, leveraging ensemble learning for robustness but slightly trailing the single tree.
+**Logistic Regression (GLM)** achieved an average ROC of 0.994, with sensitivity around 98% (effectively identifying most true links) but a specificity of 95% (showing a reasonable ability to avoid false positives).
 
-This comparison shows that logistic regression excels at ranking and capturing nearly every true connection, the decision tree delivers a clear decision logic with solid balance between sensitivity and specificity, and random forest provides a robust middle ground by modeling feature interactions.
+**Decision Tree (rpart)** reached an average ROC of 0.979, with sensitivity around 96% and specificity of 97%, offering a balanced performance with slightly fewer false positives than GLM, while being easier to interpret.
+
+**Random Forest (RF)** scored an average ROC of 0.995, with sensitivity around 97% and specificity of 98%, outperforming both GLM and Decision Tree, thanks to the power of ensemble learning for higher robustness and accuracy.
+
+This comparison shows that logistic regression excels in identifying true connections with high sensitivity, the decision tree offers a clear and interpretable decision-making process with balanced sensitivity and specificity, and random forest delivers the best performance by capturing complex interactions and achieving the highest accuracy across all metrics.
+
+The scatter plot from the second output compares the ROC scores of three models.The Tree model has the lowest ROC score at around 0.980, with a wider confidence interval, indicating more variability. GLM and Random Forest models perform better, with ROC scores around 0.994 and 0.995, respectively, and narrower confidence intervals, suggesting more consistent performance. Overall, GLM and RF outperform the Tree model in terms of predictive accuracy, as indicated by their higher ROC values. (as previously explained)
+
 
 ```{r}
 library(caret)
 set.seed(42)
 
-# 1) Features & target
+# features & target
 X <- metrics %>% dplyr::select(common_neighbors, jaccard, adamic_adar, pref_attach)
 y <- factor(metrics$class, levels = c(0,1), labels = c("no","yes"))
 
-# 2) 5-fold CV setup: save probabilities and use ROC for model selection
+# 5-fold cross validation setup, saving probabilities and using ROC for model selection
 ctrl <- trainControl(
   method           = "cv",
   number           = 5,
@@ -398,7 +397,7 @@ ctrl <- trainControl(
   savePredictions  = "final"
 )
 
-# 3) Logistic Regression model
+# for logistic regression model
 model_glm_lp <- train(
   x         = X,
   y         = y,
@@ -407,7 +406,7 @@ model_glm_lp <- train(
   metric    = "ROC",
   trControl = ctrl
 )
-# 4) Decision Tree (rpart)
+# for decision tree 
 model_dt <- train(
   x         = X,
   y         = y,
@@ -417,7 +416,7 @@ model_dt <- train(
   tuneLength = 10
 )
 
-# 5) Random Forest
+# for random forest
 model_rf <- train(
   x          = X,
   y          = y,
@@ -428,7 +427,7 @@ model_rf <- train(
   ntree      = 500
 )
 
-# 6) Summarize results
+# for the results
 resamps <- resamples(list(
   GLM  = model_glm_lp,
   Tree = model_dt,
@@ -442,9 +441,24 @@ bwplot(resamps, metric = "ROC", main = "ROC Comparison Across Models")
 
 **3.4.**
   
- To evaluate model performance, accuracy, precision, recall, and AUC were calculated using out-of-fold predictions from cross-validation. Logistic regression achieved the highest AUC (0.923) and precision (0.947), indicating strong ranking performance and few false positives. However, its recall (0.675) was lower, suggesting it missed some true links. The decision tree offered a more balanced performance with solid recall (0.807) and a good AUC (0.911). Random forest had the highest accuracy (0.85) and similar recall (0.805), but slightly lower AUC (0.887).
+Logistic Regression achieved an AUC of 0.994, showing strong ranking ability, with high precision (98%) and recall (95%), meaning it accurately identifies most links but still allows some false negatives.
 
-To understand which heuristics contributed most to predictions, varImp() function was used the on all three models. In every case—logistic regression, decision tree, and random forest—the preferential attachment score was by far the most influential feature. For example, in the logistic model, pref_attach had an importance score over 50, while the next highest features like common_neighbors, adamic_adar, and jaccard scored below 0.01. This pattern repeated in tree-based models, highlighting that nodes with more connections were consistently favored by all algorithms. This aligns with theoretical expectations: in social networks, highly connected nodes tend to attract even more links, making preferential attachment a dominant predictor of future connections.
+Decision Tree reached an AUC of 0.980, slightly lower but still strong, with balanced precision (96%) and recall (97%), offering interpretable rules and solid overall performance.
+
+Random Forest scored the highest AUC of 0.995 and the best accuracy (97%), with balanced precision (97%) and recall (98%), showing excellent predictive performance by modeling complex patterns in the network.
+
+
+**Feature importance - and what they suggest**
+
+In the context of a social network, feature importance analysis tells us which network-based features (like number of shared neighbors, Jaccard similarity, Adamic-Adar score, or preferential attachment) are most influential in predicting whether a link (relationship) exists between two nodes (in our case, characters).
+
+In short, feature importance shows which structural patterns in the network are most predictive of connections. So let's move onto the first model:
+
+In the decision tree model, Adamic-adar is the most important feature, meaning it contributed the most to splitting the data and making accurate predictions. Common Neighbors also played a strong role, while Jaccard and Preferential Attachment were less influential. This suggests the tree relies heavily on nuanced shared neighbor information to detect links in the social network.
+
+In the random forest model, Adamic-adar stands out as the most important feature by far, indicating it's the strongest predictor of links in the network. Common neighbors contributes moderately, while Jaccard and especially Preferential Attachmnt play a much smaller role. This shows that the model focuses on deeper structural similarity over basic connection counts.
+
+In the logistic regression model, Adamic-adar and Common neighbours are the most influential features, suggesting they strongly affect the likelihood of a predicted link. Jaccard and Preferential Attachment have much lower importance, indicating they contribute less to the model’s decisions. This reflects a reliance on raw and weighted counts of shared neighbors rather than relative overlap or node popularity.
 
 
 ```{r model-evaluation-and-importance, message=FALSE, warning=FALSE}
@@ -452,22 +466,22 @@ library(caret)
 library(pROC)
 library(dplyr)
 
-#LOGISTIC REGRESSION
+# logistic regression
 pred_glm <- model_glm_lp$pred
 cm_glm   <- confusionMatrix(pred_glm$pred, pred_glm$obs, positive = "yes")
 auc_glm  <- roc(pred_glm$obs, pred_glm$yes)$auc
 
-# DECISION TREE
+# decision tree
 pred_dt <- model_dt$pred
 cm_dt   <- confusionMatrix(pred_dt$pred, pred_dt$obs, positive = "yes")
 auc_dt  <- roc(pred_dt$obs, pred_dt$yes)$auc
 
-# RANDOM FOREST
+# random forest
 pred_rf <- model_rf$pred %>% filter(mtry == model_rf$bestTune$mtry)
 cm_rf   <- confusionMatrix(pred_rf$pred, pred_rf$obs, positive = "yes")
 auc_rf  <- roc(pred_rf$obs, pred_rf$yes)$auc
 
-# METRIC TABLE
+# table for model metrics
 metrics_new <- tibble(
   Model     = c("Logistic Regression", "Decision Tree", "Random Forest"),
   AUC       = c(auc_glm, auc_dt, auc_rf),
@@ -485,23 +499,22 @@ print(metrics_new)
 
 #FEATURE IMPORTANCE
 
-# Decision Tree
+# decision tree
 varImp_dt <- varImp(model_dt, scale = FALSE)
 print(varImp_dt)
 plot(varImp_dt, main = "Feature Importance - Decision Tree")
 
-# Random Forest
+# fandom forest
 varImp_rf <- varImp(model_rf, scale = FALSE)
 print(varImp_rf)
 plot(varImp_rf, main = "Feature Importance - Random Forest")
 
 
-## LG
+## logistic regression
 
 varImp_lg <- varImp(model_glm_lp, scale = FALSE)
 print(varImp_lg)
 plot(varImp_lg, main = "Feature Importance - LG")
-
 
 
 
@@ -514,6 +527,54 @@ While the current models using structural heuristics performed reasonably well, 
 For deeper improvements, graph embedding techniques like node2vec or DeepWalk can be used to generate dense vector representations of nodes that capture both local and global network structure. Finally, using Graph Neural Networks (GNNs)—which learn directly from the graph structure—could allow the model to understand more complex patterns of connectivity that heuristic-based features might miss. These approaches could potentially boost both precision and recall in predicting future or hidden links.
 
 
+# Gür
 
+Improving link prediction involves refining the model, data, or features to better capture the patterns that explain how links form in a network. To make this, we can:
+
+**Feature expansion - feature engineering**
+
+Our current features (common neighbors, jaccard, adamic_adar, preferential attachment) used in the assignment are classic heuristics. While effective, they can only capture local structure. We can improve prediction by including more advanced or diverse features, such as:
+
+- Node centrality measures (degree, betweenness, closeness)
+
+- Community detection results (whether the nodes are in the same cluster)
+
+- Temporal or contextual features if available (time of interaction, node type)
+
+- Graph embeddings (Node2Vec, DeepWalk) to capture latent structural info.
+
+**Addressing class imbalance**
+
+If the number of links is much smaller than non-links, this imbalance may bias models we use.
+
+- Downsampling the majority class or upsampling the minority
+
+- Using performance metrics sensitive to imbalance (like AUC, F1)
+
+- Trying cost-sensitive models that penalize false negatives more
+
+
+**Model tuning and algorithm selection**
+
+Although random forest performed slightly better overall, we could still benefit from some of the following:
+
+- Hyperparameter tuning (more trees, which would adjust the depth)
+
+- Trying other models like XGBoost and LightGBM
+
+- Ensembling models to combine strengths of multiple approaches (We have seen/done this in Advanced Modelling class!)
+
+
+Lastly, considering the challenges we faced because of the bipartite structure of the network:
+
+**Network-level data quality**
+
+Next time, we might want to check the following before getting hands-on to ensure our network data is well structured
+
+- Are there missing or noisy links?
+
+- Are all nodes relevant?
+
+- Would pruning weak or indirect links help improve the analysis?
 
 
