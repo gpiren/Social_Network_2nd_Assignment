@@ -88,6 +88,9 @@ marvel_links <- read.csv("data/edges.csv", stringsAsFactors = FALSE)
 ```
 
 
+
+
+
 Data cleaning for the node coordinates
 
 ```{r}
@@ -133,6 +136,24 @@ marvel_links <- marvel_links |>
          target = target + 1)
 ```
 
+```{r}
+# Fixing the Marvel dataset: it's actually a bipartite network
+# Characters are connected to comic books, not directly to each other
+
+# Create the bipartite graph
+bipartite_graph <- graph_from_data_frame(marvel_links, vertices = marvel_nodes, directed = FALSE)
+
+# Tag first 6486 nodes as characters (FALSE), rest as comic books (TRUE)
+V(bipartite_graph)$type <- seq_along(V(bipartite_graph)) > 6486
+
+# Create character-character projection
+projections <- bipartite_projection(bipartite_graph)
+network_graph <- projections$proj1  # this is your new correct character-only network
+
+
+```
+
+
 
 **Visualization**
 
@@ -149,6 +170,22 @@ plot(network_graph,
      layout = layout)
 
 V(network_graph)$id <- marvel_nodes$id  # explicitly set id attribute
+
+```
+
+```{r}
+# After projection: character-character network
+# network_graph is already created via bipartite_projection
+
+layout <- layout_with_fr(network_graph)  # since x_cor/y_cor no longer valid here
+
+plot(network_graph, 
+     vertex.label = NA, 
+     vertex.size = 2, 
+     vertex.color = "red", 
+     edge.color = "black", 
+     edge.width = 0.5, 
+     layout = layout)
 
 ```
 
@@ -290,6 +327,9 @@ The jaccard scores (0.04 to 0.67) measure the fraction of shared neighbors relat
 The adamic_adar scores (0.14 to 0.52) weigh shared neighbors by the inverse log of their degrees, giving more importance to neighbors with fewer connections—higher scores (0.52) suggest the shared neighbors are less connected overall, making them more significant for linking the pair. 
 
 The variation in similarity metrics will help later the classifier identify which pairs are more likely to form connections based on their network proximity.
+```{r}
+metrics
+```
 
 
 ```{r}
