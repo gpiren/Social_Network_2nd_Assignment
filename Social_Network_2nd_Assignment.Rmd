@@ -352,15 +352,20 @@ The output shows pairs of nodes, all in the positive class (class = 1, meaning t
 
 
 ```{r}
-# preferential attachment (product of degrees)
+V(network_graph)$name <- as.character(V(network_graph))  # ID olarak ata
+
+
 metrics$pref_attach <- mapply(function(u, v) {
-  from_idx <- which(V(network_graph)$id == u)
-  to_idx <- which(V(network_graph)$id == v)
-  if (length(from_idx) == 0 || length(to_idx) == 0) return(0)
-  degree(network_graph, from_idx) * degree(network_graph, to_idx)
+  u <- as.character(u)
+  v <- as.character(v)
+  if (u %in% V(network_graph)$name & v %in% V(network_graph)$name) {
+    degree(network_graph, v = u) * degree(network_graph, v = v)
+  } else {
+    0
+  }
 }, metrics$from, metrics$to)
 
-# Check results for preferential attachment
+
 head(metrics %>% select(-common_neighbors, -jaccard, -adamic_adar))
 ```
 
