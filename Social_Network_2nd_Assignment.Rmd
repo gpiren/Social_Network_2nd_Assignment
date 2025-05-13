@@ -24,9 +24,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(igraph)
 library(stringr)
-library(dplyr)
 library(archive)
-
 library(ggraph) 
 library(tidygraph)
 library(ggrepel)
@@ -36,6 +34,8 @@ library(fmsb)
 library(GGally)
 library(tidyr)
 library(caret)
+library(pROC)
+
 ```
 
 ## Tasks
@@ -162,11 +162,10 @@ plot(network_graph,
 ```
 
 
-**3. Link Prediction Project**
+## Link Prediction Project
   
-### 3.1.
-  
-**Delete a fraction of real edges: Randomly remove 10-20% of edges using delete_edges() in igraph. Create a table of deleted (positive) and non-existing (negative) links with sample() for negative class.**
+
+### Delete a fraction of real edges: Randomly remove 10-20% of edges using delete_edges() in igraph. Create a table of deleted (positive) and non-existing (negative) links with sample() for negative class.
   
   
 The below code visualizes the process of preparing data for link prediction on the Marvel network in three steps: first, it plots the original network with all connections; then, it removes 15% of the edges, highlights them in gray, and plots this modified network; finally, it creates a reduced network by deleting those edges, generates a negative class of non-existing links, and plots the reduced network. The positive class consists of the removed edges, while the negative class includes an equal number of randomly sampled non-existing node pairs. The plots use node positions from x_cor and y_cor, with red nodes, black edges, and no labels for clarity.
@@ -184,7 +183,7 @@ set.seed(123)
 # to ensure the 1x3 layout of three networks - original, network with removed edges, and reduced network
 par(mar = c(0, 0, 0, 0), mfrow = c(1, 3))
 
-# --- Plot 1: Original network ---
+# original network
 plot(network_graph,
      vertex.label = NA,
      vertex.size = 2,
@@ -243,9 +242,9 @@ plot(graph_reduced,
 ```
 
 
-### 3.2.
 
-Generate proximity/similarity metrics: Compute heuristics (common neighbors, Jaccard, Adamic-Adar) for all links using similarity() functions in igraph or custom calculations.
+
+### Generate proximity/similarity metrics: Compute heuristics (common neighbors, Jaccard, Adamic-Adar) for all links using similarity() functions in igraph or custom calculations.
 
 **Common Neighbours** 
   
@@ -363,7 +362,7 @@ head(metrics %>% select(-common_neighbors, -jaccard, -adamic_adar))
 ```
 
 
-**3.3.**
+### Modeling Part
   
 Next, three classifiers which are logistic regression, a decision tree (CART), and random forest  was trained by using our four heuristics (common neighbors, Jaccard, Adamic–Adar and preferential attachment) as input features. 
 
@@ -380,8 +379,8 @@ This comparison shows that logistic regression excels in identifying true connec
 The scatter plot from the second output compares the ROC scores of three models.The Tree model has the lowest ROC score at around 0.980, with a wider confidence interval, indicating more variability. GLM and Random Forest models perform better, with ROC scores around 0.994 and 0.995, respectively, and narrower confidence intervals, suggesting more consistent performance. Overall, GLM and RF outperform the Tree model in terms of predictive accuracy, as indicated by their higher ROC values. (as previously explained)
 
 
-```{r}
-library(caret)
+```{r warning=FALSE}
+
 set.seed(42)
 
 # features & target
@@ -439,7 +438,7 @@ bwplot(resamps, metric = "ROC", main = "ROC Comparison Across Models")
 ```
 
 
-**3.4.**
+### Evaluation of model
   
 Logistic Regression achieved an AUC of 0.994, showing strong ranking ability, with high precision (98%) and recall (95%), meaning it accurately identifies most links but still allows some false negatives.
 
@@ -462,9 +461,7 @@ In the logistic regression model, Adamic-adar and Common neighbours are the most
 
 
 ```{r model-evaluation-and-importance, message=FALSE, warning=FALSE}
-library(caret)
-library(pROC)
-library(dplyr)
+
 
 # logistic regression
 pred_glm <- model_glm_lp$pred
@@ -497,7 +494,7 @@ metrics_new <- tibble(
 )
 print(metrics_new)
 
-#FEATURE IMPORTANCE
+#Feature Importance
 
 # decision tree
 varImp_dt <- varImp(model_dt, scale = FALSE)
@@ -520,14 +517,7 @@ plot(varImp_lg, main = "Feature Importance - LG")
 
 ```
 
-### 3.5  Potential Improvements
-
-While the current models using structural heuristics performed reasonably well, there is still room for improvement. One direction would be to incorporate node-level attributes such as degree centrality, community membership, or even character metadata (e.g., gender, popularity, or comic genre) to enrich the feature set and provide more contextual signals for link prediction. Additionally, exploring more advanced models like gradient boosting or support vector machines could help capture non-linear relationships between features.
-
-For deeper improvements, graph embedding techniques like node2vec or DeepWalk can be used to generate dense vector representations of nodes that capture both local and global network structure. Finally, using Graph Neural Networks (GNNs)—which learn directly from the graph structure—could allow the model to understand more complex patterns of connectivity that heuristic-based features might miss. These approaches could potentially boost both precision and recall in predicting future or hidden links.
-
-
-# Gür
+### Potential Improvements
 
 Improving link prediction involves refining the model, data, or features to better capture the patterns that explain how links form in a network. To make this, we can:
 
@@ -578,3 +568,6 @@ Next time, we might want to check the following before getting hands-on to ensur
 - Would pruning weak or indirect links help improve the analysis?
 
 
+## Reference 
+
+R. Alberich, J. Miro-Julia, and F. Rossello, "Marvel Universe looks almost like a real social network." arxiv:cond-mat/0202174 (2002)., http://arxiv.org/abs/cond-mat/0202174
